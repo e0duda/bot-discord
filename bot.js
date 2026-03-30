@@ -1,55 +1,61 @@
-const { Client, GatewayIntentBits } = require('discord.js');
+let progressoMsg;
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
-});
+if (interaction.customId === "enviar") {
+  if (progresso.rodando) {
+    return interaction.reply({
+      content: "Já existe um envio em andamento.",
+      ephemeral: true
+    });
+  }
 
-client.once('ready', () => {
-  console.log(`Bot ligado: ${client.user.tag}`);
-});
+  progresso = { enviadas: 0, falhas: 0, total: 0, rodando: true };
 
-client.on('messageCreate', async (message) => {
-  if (message.content === "!dmall") {
+  const guild = interaction.guild;
+  await guild.members.fetch();
 
-    const msgStatus = await message.reply("Iniciando envio de DMs...");
+  const membros = guild.members.cache.filter(m => !m.user.bot);
+  progresso.total = membros.size;
 
-    const members = await message.guild.members.fetch();
+  const embed = new EmbedBuilder()
+    .setTitle("📡 Enviando Divulgação")
+    .setDescription("Iniciando envio...")
+    .setColor(0x2b2d31);
 
-    let enviados = 0;
-    let falhas = 0;
-    let total = 0;
+  await interaction.reply({ embeds: [embed] });
+  progressoMsg = await interaction.fetchReply();
 
-    for (const [id, member] of members) {
-      if (member.user.bot) continue;
-
-      total++;
-
-      try {
-        await member.send(`**Assim que acabar a live hoje, terá uma promoção de 50% em todos os produtos do servidor durante 30 minutos.**
-https://discord.gg/UtUbyJ8JeU`);
-
-        enviados++;
-      } catch {
-        falhas++;
-      }
-
-      // pequeno delay para evitar bloqueio
-      await new Promise(r => setTimeout(r, 1200));
+  for (const member of membros.values()) {
+    try {
+      await member.send(mensagemDivulgacao);
+      progresso.enviadas++;
+    } catch {
+      progresso.falhas++;
     }
 
-    await msgStatus.edit(
-      `Envio finalizado ✅
+    const progressoEmbed = new EmbedBuilder()
+      .setTitle("📡 Progresso da Divulgação")
+      .setDescription(
+        `Total: ${progresso.total}
+Enviadas: ${progresso.enviadas}
+Falhas: ${progresso.falhas}`
+      )
+      .setColor(0x2b2d31);
 
-👥 Total verificado: ${total}
-📩 Receberam a DM: ${enviados}
-❌ Não receberam: ${falhas}`
-    );
+    await progressoMsg.edit({ embeds: [progressoEmbed] });
+
+    await new Promise(r => setTimeout(r, 1200));
   }
-});
 
-client.login(process.env.TOKEN);
+  progresso.rodando = false;
+
+  const finalEmbed = new EmbedBuilder()
+    .setTitle("✅ Divulgação Finalizada")
+    .setDescription(
+      `Total: ${progresso.total}
+Enviadas: ${progresso.enviadas}
+Falhas: ${progresso.falhas}`
+    )
+    .setColor(0x00ff99);
+
+  await progressoMsg.edit({ embeds: [finalEmbed] });
+}
