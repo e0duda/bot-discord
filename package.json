@@ -1,5 +1,12 @@
 {
+  "name": "bot-discord",
+  "version": "1.0.0",
+  "description": "bot que envia dm",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
   "dependencies": {
-    "discord.js": "^14.25.1"
+    "discord.js": "^14.14.1"
   }
 }
