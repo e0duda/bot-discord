@@ -10,6 +10,17 @@ const {
   TextInputStyle
 } = require("discord.js");
 
+const sqlite3 = require("sqlite3").verbose();
+
+// BANCO DE DADOS
+const db = new sqlite3.Database("./database.db");
+
+db.run(`
+CREATE TABLE IF NOT EXISTS usuarios_dm (
+  id TEXT PRIMARY KEY
+)
+`);
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -48,11 +59,37 @@ client.on("messageCreate", async (message) => {
   // PARAR DIVULGAÇÃO
   if (message.content === "!parar") {
     if (!progresso.rodando) {
-      return message.reply("Não existe divulgação em andamento.");
+      return message.reply("Não existe divulgação rodando.");
     }
 
     progresso.parar = true;
-    return message.reply("⛔ Parando a divulgação...");
+    return message.reply("⛔ Parando divulgação...");
+  }
+
+  // LIMPAR DMS
+  if (message.content === "!limpardm") {
+    message.reply("🧹 Limpando DMs enviadas pelo bot...");
+
+    db.all("SELECT id FROM usuarios_dm", async (err, rows) => {
+      if (err) return;
+
+      for (const row of rows) {
+        try {
+          const user = await client.users.fetch(row.id);
+          const dm = await user.createDM();
+
+          const mensagens = await dm.messages.fetch({ limit: 100 });
+
+          for (const msg of mensagens.values()) {
+            if (msg.author.id === client.user.id) {
+              await msg.delete().catch(() => {});
+            }
+          }
+        } catch {}
+      }
+
+      message.channel.send("✅ Limpeza concluída.");
+    });
   }
 
   // SORTEAR
@@ -110,12 +147,10 @@ client.on("messageCreate", async (message) => {
 // INTERAÇÕES
 client.on("interactionCreate", async (interaction) => {
 
-  // BOTÕES
   if (interaction.isButton()) {
 
-    // ALTERAR MENSAGEM COM CAIXA DE TEXTO
+    // ALTERAR MENSAGEM (MODAL)
     if (interaction.customId === "mensagem") {
-
       const modal = new ModalBuilder()
         .setCustomId("modal_mensagem")
         .setTitle("Alterar mensagem de divulgação");
@@ -164,9 +199,8 @@ client.on("interactionCreate", async (interaction) => {
       mensagemSorteio = await interaction.fetchReply();
     }
 
-    // PARTICIPAR
+    // PARTICIPAR DO SORTEIO
     if (interaction.customId === "participar_sorteio") {
-
       if (!sorteioAtivo) {
         return interaction.reply({
           content: "Sorteio encerrado.",
@@ -234,6 +268,13 @@ client.on("interactionCreate", async (interaction) => {
 
         try {
           await member.send(mensagemDivulgacao);
+
+          // salvar no banco
+          db.run(
+            "INSERT OR IGNORE INTO usuarios_dm (id) VALUES (?)",
+            [member.id]
+          );
+
           progresso.enviadas++;
         } catch {
           progresso.falhas++;
@@ -267,14 +308,14 @@ Falhas: ${progresso.falhas}`
     }
   }
 
-  // MODAL (CAIXA DE TEXTO)
+  // MODAL
   if (interaction.isModalSubmit()) {
     if (interaction.customId === "modal_mensagem") {
-
-      mensagemDivulgacao = interaction.fields.getTextInputValue("nova_mensagem");
+      mensagemDivulgacao =
+        interaction.fields.getTextInputValue("nova_mensagem");
 
       return interaction.reply({
-        content: "Mensagem de divulgação atualizada com sucesso.",
+        content: "Mensagem atualizada com sucesso.",
         ephemeral: true
       });
     }
