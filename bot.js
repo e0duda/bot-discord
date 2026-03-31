@@ -4,7 +4,10 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder
+  EmbedBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } = require("discord.js");
 
 const client = new Client({
@@ -17,13 +20,13 @@ const client = new Client({
 });
 
 let mensagemDivulgacao = "Mensagem ainda não configurada.";
-let alterandoMensagem = false;
 
 let progresso = {
   enviadas: 0,
   falhas: 0,
   total: 0,
-  rodando: false
+  rodando: false,
+  parar: false
 };
 
 let progressoMsg;
@@ -42,21 +45,24 @@ client.once("ready", () => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // ALTERAR MENSAGEM DE DIVULGAÇÃO
-  if (alterandoMensagem) {
-    mensagemDivulgacao = message.content;
-    alterandoMensagem = false;
-    return message.reply("Mensagem de divulgação atualizada.");
+  // PARAR DIVULGAÇÃO
+  if (message.content === "!parar") {
+    if (!progresso.rodando) {
+      return message.reply("Não existe divulgação em andamento.");
+    }
+
+    progresso.parar = true;
+    return message.reply("⛔ Parando a divulgação...");
   }
 
-  // SORTEAR VENCEDOR
+  // SORTEAR
   if (message.content === "!sortear") {
     if (!sorteioAtivo) {
       return message.reply("Nenhum sorteio ativo.");
     }
 
     if (participantes.size === 0) {
-      return message.reply("Ninguém participou do sorteio.");
+      return message.reply("Ninguém participou.");
     }
 
     const lista = Array.from(participantes);
@@ -67,17 +73,17 @@ client.on("messageCreate", async (message) => {
 
     const embed = new EmbedBuilder()
       .setTitle("🎉 Sorteio Encerrado")
-      .setDescription(`O vencedor foi: <@${vencedor}>`)
+      .setDescription(`Vencedor: <@${vencedor}>`)
       .setColor(0x00ff99);
 
     return message.channel.send({ embeds: [embed] });
   }
 
-  // ABRIR PAINEL
+  // PAINEL
   if (message.content === "!painel") {
     const embed = new EmbedBuilder()
       .setTitle("Painel de Divulgação")
-      .setDescription("Controle o envio pelo painel abaixo.")
+      .setDescription("Controle o bot abaixo.")
       .setColor(0x2b2d31);
 
     const row = new ActionRowBuilder().addComponents(
@@ -101,146 +107,179 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// BOTÕES
+// INTERAÇÕES
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
 
-  // ALTERAR MENSAGEM
-  if (interaction.customId === "mensagem") {
-    alterandoMensagem = true;
-    return interaction.reply({
-      content: "Envie a nova mensagem de divulgação no chat.",
-      ephemeral: true
-    });
-  }
+  // BOTÕES
+  if (interaction.isButton()) {
 
-  // CRIAR SORTEIO
-  if (interaction.customId === "criar_sorteio") {
-    if (sorteioAtivo) {
-      return interaction.reply({
-        content: "Já existe um sorteio ativo.",
-        ephemeral: true
-      });
+    // ALTERAR MENSAGEM COM CAIXA DE TEXTO
+    if (interaction.customId === "mensagem") {
+
+      const modal = new ModalBuilder()
+        .setCustomId("modal_mensagem")
+        .setTitle("Alterar mensagem de divulgação");
+
+      const input = new TextInputBuilder()
+        .setCustomId("nova_mensagem")
+        .setLabel("Digite a nova mensagem")
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true);
+
+      const row = new ActionRowBuilder().addComponents(input);
+      modal.addComponents(row);
+
+      return interaction.showModal(modal);
     }
 
-    sorteioAtivo = true;
-    participantes.clear();
-
-    const embed = new EmbedBuilder()
-      .setTitle("🎉 Sorteio Iniciado")
-      .setDescription("Clique no botão para participar!\n\nParticipantes: 0")
-      .setColor(0x5865f2);
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("participar_sorteio")
-        .setLabel("Participar")
-        .setStyle(ButtonStyle.Success)
-    );
-
-    await interaction.reply({
-      embeds: [embed],
-      components: [row]
-    });
-
-    mensagemSorteio = await interaction.fetchReply();
-  }
-
-  // PARTICIPAR DO SORTEIO
-  if (interaction.customId === "participar_sorteio") {
-    if (!sorteioAtivo) {
-      return interaction.reply({
-        content: "Não há sorteio ativo.",
-        ephemeral: true
-      });
-    }
-
-    if (participantes.has(interaction.user.id)) {
-      return interaction.reply({
-        content: "Você já entrou no sorteio.",
-        ephemeral: true
-      });
-    }
-
-    participantes.add(interaction.user.id);
-
-    const embedAtualizado = new EmbedBuilder()
-      .setTitle("🎉 Sorteio Ativo")
-      .setDescription(
-        `Clique no botão para participar!\n\nParticipantes: ${participantes.size}\nÚltimo participante: <@${interaction.user.id}>`
-      )
-      .setColor(0x5865f2);
-
-    await mensagemSorteio.edit({
-      embeds: [embedAtualizado]
-    });
-
-    return interaction.reply({
-      content: "Você entrou no sorteio!",
-      ephemeral: true
-    });
-  }
-
-  // ENVIAR DIVULGAÇÃO
-  if (interaction.customId === "enviar") {
-    if (progresso.rodando) {
-      return interaction.reply({
-        content: "Já existe um envio em andamento.",
-        ephemeral: true
-      });
-    }
-
-    progresso = { enviadas: 0, falhas: 0, total: 0, rodando: true };
-
-    const guild = interaction.guild;
-    await guild.members.fetch();
-
-    const membros = guild.members.cache.filter(m => !m.user.bot);
-    progresso.total = membros.size;
-
-    const embed = new EmbedBuilder()
-      .setTitle("📡 Iniciando Divulgação")
-      .setDescription("Preparando envio...")
-      .setColor(0x2b2d31);
-
-    await interaction.reply({ embeds: [embed] });
-    progressoMsg = await interaction.fetchReply();
-
-    for (const member of membros.values()) {
-      try {
-        await member.send(mensagemDivulgacao);
-        progresso.enviadas++;
-      } catch {
-        progresso.falhas++;
+    // CRIAR SORTEIO
+    if (interaction.customId === "criar_sorteio") {
+      if (sorteioAtivo) {
+        return interaction.reply({
+          content: "Já existe sorteio ativo.",
+          ephemeral: true
+        });
       }
 
-      const progressoEmbed = new EmbedBuilder()
-        .setTitle("📡 Progresso da Divulgação")
-        .setDescription(
-          `Total: ${progresso.total}
-Enviadas: ${progresso.enviadas}
-Falhas: ${progresso.falhas}`
-        )
-        .setColor(0x2b2d31);
+      sorteioAtivo = true;
+      participantes.clear();
 
-      await progressoMsg.edit({ embeds: [progressoEmbed] });
+      const embed = new EmbedBuilder()
+        .setTitle("🎉 Sorteio Iniciado")
+        .setDescription("Clique para participar!\n\nParticipantes: 0")
+        .setColor(0x5865f2);
 
-      await new Promise(r => setTimeout(r, 1200));
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("participar_sorteio")
+          .setLabel("Participar")
+          .setStyle(ButtonStyle.Success)
+      );
+
+      await interaction.reply({
+        embeds: [embed],
+        components: [row]
+      });
+
+      mensagemSorteio = await interaction.fetchReply();
     }
 
-    progresso.rodando = false;
+    // PARTICIPAR
+    if (interaction.customId === "participar_sorteio") {
 
-    const finalEmbed = new EmbedBuilder()
-      .setTitle("✅ Divulgação Finalizada")
-      .setDescription(
-        `Total: ${progresso.total}
+      if (!sorteioAtivo) {
+        return interaction.reply({
+          content: "Sorteio encerrado.",
+          ephemeral: true
+        });
+      }
+
+      if (participantes.has(interaction.user.id)) {
+        return interaction.reply({
+          content: "Você já entrou.",
+          ephemeral: true
+        });
+      }
+
+      participantes.add(interaction.user.id);
+
+      const embedAtualizado = new EmbedBuilder()
+        .setTitle("🎉 Sorteio Ativo")
+        .setDescription(
+          `Participantes: ${participantes.size}\nÚltimo: <@${interaction.user.id}>`
+        )
+        .setColor(0x5865f2);
+
+      await mensagemSorteio.edit({ embeds: [embedAtualizado] });
+
+      return interaction.reply({
+        content: "Você entrou no sorteio!",
+        ephemeral: true
+      });
+    }
+
+    // ENVIAR DIVULGAÇÃO
+    if (interaction.customId === "enviar") {
+      if (progresso.rodando) {
+        return interaction.reply({
+          content: "Já existe envio em andamento.",
+          ephemeral: true
+        });
+      }
+
+      progresso = {
+        enviadas: 0,
+        falhas: 0,
+        total: 0,
+        rodando: true,
+        parar: false
+      };
+
+      const guild = interaction.guild;
+      await guild.members.fetch();
+
+      const membros = guild.members.cache.filter(m => !m.user.bot);
+      progresso.total = membros.size;
+
+      const embed = new EmbedBuilder()
+        .setTitle("📡 Iniciando Divulgação")
+        .setColor(0x2b2d31);
+
+      await interaction.reply({ embeds: [embed] });
+      progressoMsg = await interaction.fetchReply();
+
+      for (const member of membros.values()) {
+
+        if (progresso.parar) break;
+
+        try {
+          await member.send(mensagemDivulgacao);
+          progresso.enviadas++;
+        } catch {
+          progresso.falhas++;
+        }
+
+        const progressoEmbed = new EmbedBuilder()
+          .setTitle("📡 Progresso")
+          .setDescription(
+            `Total: ${progresso.total}
 Enviadas: ${progresso.enviadas}
 Falhas: ${progresso.falhas}`
-      )
-      .setColor(0x00ff99);
+          )
+          .setColor(0x2b2d31);
 
-    await progressoMsg.edit({ embeds: [finalEmbed] });
+        await progressoMsg.edit({ embeds: [progressoEmbed] });
+
+        await new Promise(r => setTimeout(r, 1200));
+      }
+
+      progresso.rodando = false;
+
+      const finalEmbed = new EmbedBuilder()
+        .setTitle("Divulgação Finalizada")
+        .setDescription(
+          `Enviadas: ${progresso.enviadas}
+Falhas: ${progresso.falhas}`
+        )
+        .setColor(0x00ff99);
+
+      await progressoMsg.edit({ embeds: [finalEmbed] });
+    }
   }
+
+  // MODAL (CAIXA DE TEXTO)
+  if (interaction.isModalSubmit()) {
+    if (interaction.customId === "modal_mensagem") {
+
+      mensagemDivulgacao = interaction.fields.getTextInputValue("nova_mensagem");
+
+      return interaction.reply({
+        content: "Mensagem de divulgação atualizada com sucesso.",
+        ephemeral: true
+      });
+    }
+  }
+
 });
 
 client.login(process.env.TOKEN);
