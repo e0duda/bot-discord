@@ -31,23 +31,25 @@ let progressoMsg;
 // SISTEMA DE SORTEIO
 let participantes = new Set();
 let sorteioAtivo = false;
+let mensagemSorteio;
 
 // BOT ONLINE
 client.once("ready", () => {
   console.log(`Bot online como ${client.user.tag}`);
 });
 
-// COMANDO PARA ABRIR O PAINEL
+// COMANDOS
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
+  // ALTERAR MENSAGEM DE DIVULGAÇÃO
   if (alterandoMensagem) {
     mensagemDivulgacao = message.content;
     alterandoMensagem = false;
     return message.reply("Mensagem de divulgação atualizada.");
   }
 
-  // COMANDO PARA SORTEAR
+  // SORTEAR VENCEDOR
   if (message.content === "!sortear") {
     if (!sorteioAtivo) {
       return message.reply("Nenhum sorteio ativo.");
@@ -63,9 +65,15 @@ client.on("messageCreate", async (message) => {
     sorteioAtivo = false;
     participantes.clear();
 
-    return message.channel.send(`🎉 O vencedor do sorteio foi: <@${vencedor}>`);
+    const embed = new EmbedBuilder()
+      .setTitle("🎉 Sorteio Encerrado")
+      .setDescription(`O vencedor foi: <@${vencedor}>`)
+      .setColor(0x00ff99);
+
+    return message.channel.send({ embeds: [embed] });
   }
 
+  // ABRIR PAINEL
   if (message.content === "!painel") {
     const embed = new EmbedBuilder()
       .setTitle("Painel de Divulgação")
@@ -120,7 +128,7 @@ client.on("interactionCreate", async (interaction) => {
 
     const embed = new EmbedBuilder()
       .setTitle("🎉 Sorteio Iniciado")
-      .setDescription("Clique no botão abaixo para participar!")
+      .setDescription("Clique no botão para participar!\n\nParticipantes: 0")
       .setColor(0x5865f2);
 
     const row = new ActionRowBuilder().addComponents(
@@ -130,10 +138,12 @@ client.on("interactionCreate", async (interaction) => {
         .setStyle(ButtonStyle.Success)
     );
 
-    return interaction.reply({
+    await interaction.reply({
       embeds: [embed],
       components: [row]
     });
+
+    mensagemSorteio = await interaction.fetchReply();
   }
 
   // PARTICIPAR DO SORTEIO
@@ -147,12 +157,23 @@ client.on("interactionCreate", async (interaction) => {
 
     if (participantes.has(interaction.user.id)) {
       return interaction.reply({
-        content: "Você já está participando.",
+        content: "Você já entrou no sorteio.",
         ephemeral: true
       });
     }
 
     participantes.add(interaction.user.id);
+
+    const embedAtualizado = new EmbedBuilder()
+      .setTitle("🎉 Sorteio Ativo")
+      .setDescription(
+        `Clique no botão para participar!\n\nParticipantes: ${participantes.size}\nÚltimo participante: <@${interaction.user.id}>`
+      )
+      .setColor(0x5865f2);
+
+    await mensagemSorteio.edit({
+      embeds: [embedAtualizado]
+    });
 
     return interaction.reply({
       content: "Você entrou no sorteio!",
