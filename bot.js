@@ -28,6 +28,10 @@ let progresso = {
 
 let progressoMsg;
 
+// SISTEMA DE SORTEIO
+let participantes = new Set();
+let sorteioAtivo = false;
+
 // BOT ONLINE
 client.once("ready", () => {
   console.log(`Bot online como ${client.user.tag}`);
@@ -41,6 +45,25 @@ client.on("messageCreate", async (message) => {
     mensagemDivulgacao = message.content;
     alterandoMensagem = false;
     return message.reply("Mensagem de divulgação atualizada.");
+  }
+
+  // COMANDO PARA SORTEAR
+  if (message.content === "!sortear") {
+    if (!sorteioAtivo) {
+      return message.reply("Nenhum sorteio ativo.");
+    }
+
+    if (participantes.size === 0) {
+      return message.reply("Ninguém participou do sorteio.");
+    }
+
+    const lista = Array.from(participantes);
+    const vencedor = lista[Math.floor(Math.random() * lista.length)];
+
+    sorteioAtivo = false;
+    participantes.clear();
+
+    return message.channel.send(`🎉 O vencedor do sorteio foi: <@${vencedor}>`);
   }
 
   if (message.content === "!painel") {
@@ -58,7 +81,12 @@ client.on("messageCreate", async (message) => {
       new ButtonBuilder()
         .setCustomId("mensagem")
         .setLabel("Alterar Mensagem")
-        .setStyle(ButtonStyle.Primary)
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId("criar_sorteio")
+        .setLabel("Criar Sorteio")
+        .setStyle(ButtonStyle.Secondary)
     );
 
     message.channel.send({ embeds: [embed], components: [row] });
@@ -74,6 +102,60 @@ client.on("interactionCreate", async (interaction) => {
     alterandoMensagem = true;
     return interaction.reply({
       content: "Envie a nova mensagem de divulgação no chat.",
+      ephemeral: true
+    });
+  }
+
+  // CRIAR SORTEIO
+  if (interaction.customId === "criar_sorteio") {
+    if (sorteioAtivo) {
+      return interaction.reply({
+        content: "Já existe um sorteio ativo.",
+        ephemeral: true
+      });
+    }
+
+    sorteioAtivo = true;
+    participantes.clear();
+
+    const embed = new EmbedBuilder()
+      .setTitle("🎉 Sorteio Iniciado")
+      .setDescription("Clique no botão abaixo para participar!")
+      .setColor(0x5865f2);
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("participar_sorteio")
+        .setLabel("Participar")
+        .setStyle(ButtonStyle.Success)
+    );
+
+    return interaction.reply({
+      embeds: [embed],
+      components: [row]
+    });
+  }
+
+  // PARTICIPAR DO SORTEIO
+  if (interaction.customId === "participar_sorteio") {
+    if (!sorteioAtivo) {
+      return interaction.reply({
+        content: "Não há sorteio ativo.",
+        ephemeral: true
+      });
+    }
+
+    if (participantes.has(interaction.user.id)) {
+      return interaction.reply({
+        content: "Você já está participando.",
+        ephemeral: true
+      });
+    }
+
+    participantes.add(interaction.user.id);
+
+    return interaction.reply({
+      content: "Você entrou no sorteio!",
       ephemeral: true
     });
   }
